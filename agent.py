@@ -9,6 +9,9 @@ USER_ID_LEN = 32
 current_users = []
 last_seen_msg_id = None
 
+# The current model, as a list of INDRA statements
+stmts = []
+
 def ack_subscribe_agent(user_list):
     on_user_list(user_list)
 
@@ -19,13 +22,32 @@ def on_user_list(user_list):
 
 def on_message(data):
     global last_seen_msg_id
+    global stmts
     if isinstance(data, dict) and data['id'] != last_seen_msg_id:
         last_seen_msg_id = data['id']
         if {'id': user_id} in data['targets']:
             if data['comment'].startswith('indra:'):
                 text = data['comment'][6:]
-                load_model_from_text(text, data['userName'])
+                if text.lower() in ['start over', 'cls']:
+                    clear_model(data['userName'])
+                else:
+                    load_model_from_text(text, data['userName'])
             print '<%s> %s' % (data['userName'], data['comment'])
+
+def clear_model(user_name):
+    global stmts
+    stmts = []
+    say('OK %s, starting a new model.' % user_name)
+    update_model()
+
+def update_model():
+    global stmts
+    sa = sbgn_assembler.SBGNAssembler(stmts)
+    sbgn_content = sa.make_model()
+    socket.emit('agentNewFileRequest', {})
+    time.sleep(2)
+    socket.emit('agentLoadFileRequest', {'param': sbgn_content})
+    socket.emit('agentRunLayoutRequest', {})
 
 def load_model_from_text(text, requester_name):
     say("%s: Got it. Assembling model..." % requester_name)
