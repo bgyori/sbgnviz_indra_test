@@ -60,7 +60,7 @@ def update_layout():
     socket.emit('agentRunLayoutRequest', {})
 
 def update_model_from_paper(pmcid, requester_name):
-    say("%s: Got it. Reading %s with REACH." \
+    say("%s: Got it. Reading %s via INDRA. " \
         "This usually takes about a minute." % (requester_name, pmcid))
     rp = reach.process_pmc(pmcid)
     update_model(rp.statements, requester_name)
@@ -76,15 +76,12 @@ def update_model(new_stmts, requester_name):
     pa = Preassembler(hierarchies, stmts)
     pa.combine_related()
     stmts = pa.related_stmts
-    print "Stmts before linking:", stmts
     ml = MechLinker(stmts)
     linked_stmts = ml.link_statements()
-    print "Linked", linked_stmts
     if linked_stmts:
         for linked_stmt in linked_stmts:
             if linked_stmt.inferred_stmt:
                 question = mechlinker_queries.print_linked_stmt(linked_stmt)
-                print "Question: %s" % question
                 say(question)
                 stmts.append(linked_stmt.inferred_stmt)
     say("%s: Assembly complete, now updating layout." % requester_name)
