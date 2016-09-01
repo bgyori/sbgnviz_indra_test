@@ -2,7 +2,8 @@ import sys
 import time
 import random
 from socketIO_client import SocketIO
-from indra.assemblers import sbgn_assembler
+from indra.assemblers.sbgn_assembler import SBGNAssembler
+from indra import trips
 
 USER_ID_LEN = 32
 
@@ -31,32 +32,34 @@ def on_message(data):
                 if text.lower() in ['start over', 'cls']:
                     clear_model(data['userName'])
                 else:
-                    load_model_from_text(text, data['userName'])
+                    update_model_from_text(text, data['userName'])
             print '<%s> %s' % (data['userName'], data['comment'])
 
 def clear_model(user_name):
     global stmts
     stmts = []
     say('OK %s, starting a new model.' % user_name)
-    update_model()
+    update_layout()
 
-def update_model():
+def update_layout():
     global stmts
-    sa = sbgn_assembler.SBGNAssembler(stmts)
+    sa = SBGNAssembler()
+    sa.add_statements(stmts)
     sbgn_content = sa.make_model()
+    print sbgn_content
     socket.emit('agentNewFileRequest', {})
     time.sleep(2)
     socket.emit('agentLoadFileRequest', {'param': sbgn_content})
     socket.emit('agentRunLayoutRequest', {})
 
-def load_model_from_text(text, requester_name):
+def update_model_from_text(text, requester_name):
+    global stmts
     say("%s: Got it. Assembling model..." % requester_name)
-    sbgn_content = sbgn_assembler.text_to_sbgn(text)
-    say("%s: Assembly complete, now loading model." % requester_name)
-    socket.emit('agentNewFileRequest', {})
-    time.sleep(2)
-    socket.emit('agentLoadFileRequest', {'param': sbgn_content})
-    socket.emit('agentRunLayoutRequest', {})
+    tp = trips.process_text(text)
+    stmts += tp.statements
+    print stmts
+    say("%s: Assembly complete, now updating layout." % requester_name)
+    update_layout()
 
 def say(text):
     msg = {'room': room_id, 'comment': text, 'userName': user_name,
