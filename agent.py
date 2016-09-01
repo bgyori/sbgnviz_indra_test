@@ -4,6 +4,7 @@ import random
 from socketIO_client import SocketIO
 from indra.assemblers.sbgn_assembler import SBGNAssembler
 from indra import trips
+from indra import reach
 
 USER_ID_LEN = 32
 
@@ -31,6 +32,9 @@ def on_message(data):
                 text = data['comment'][6:]
                 if text.lower() in ['start over', 'cls']:
                     clear_model(data['userName'])
+                elif text.strip().lower().startswith('read'):
+                    pmcid = text[4:].strip()
+                    update_model_from_paper(pmcid, data['userName'])
                 else:
                     update_model_from_text(text, data['userName'])
             print '<%s> %s' % (data['userName'], data['comment'])
@@ -46,18 +50,24 @@ def update_layout():
     sa = SBGNAssembler()
     sa.add_statements(stmts)
     sbgn_content = sa.make_model()
-    print sbgn_content
     socket.emit('agentNewFileRequest', {})
     time.sleep(2)
     socket.emit('agentLoadFileRequest', {'param': sbgn_content})
     socket.emit('agentRunLayoutRequest', {})
+
+def update_model_from_paper(pmcid, requester_name):
+    global stmts
+    say("%s: Got it. Reading %s with REACH..." % (requester_name, pmcid))
+    rp = reach.process_pmc(pmcid)
+    stmts += rp.statements
+    say("%s: Reading done, updating layout." % requester_name)
+    update_layout()
 
 def update_model_from_text(text, requester_name):
     global stmts
     say("%s: Got it. Assembling model..." % requester_name)
     tp = trips.process_text(text)
     stmts += tp.statements
-    print stmts
     say("%s: Assembly complete, now updating layout." % requester_name)
     update_layout()
 
