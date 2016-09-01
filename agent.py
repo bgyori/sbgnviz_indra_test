@@ -2,7 +2,7 @@ import sys
 import time
 import random
 from socketIO_client import SocketIO
-import indra.sbgn_assembler
+from indra.assemblers import sbgn_assembler
 
 USER_ID_LEN = 32
 
@@ -29,7 +29,7 @@ def on_message(data):
 
 def load_model_from_text(text, requester_name):
     say("%s: Got it. Assembling model..." % requester_name)
-    sbgn_content = indra.sbgn_assembler.text_to_sbgn(text)
+    sbgn_content = sbgn_assembler.text_to_sbgn(text)
     say("%s: Assembly complete, now loading model." % requester_name)
     socket.emit('agentNewFileRequest', {})
     time.sleep(2)
