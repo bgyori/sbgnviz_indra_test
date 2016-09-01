@@ -5,6 +5,10 @@ from socketIO_client import SocketIO
 from indra.assemblers.sbgn_assembler import SBGNAssembler
 from indra import trips
 from indra import reach
+from indra.preassembler import Preassembler
+from indra.preassembler.hierarchy_manager import hierarchies
+from indra.mechlinker import MechLinker
+from indra.tools import mechlinker_queries
 
 USER_ID_LEN = 32
 
@@ -56,18 +60,33 @@ def update_layout():
     socket.emit('agentRunLayoutRequest', {})
 
 def update_model_from_paper(pmcid, requester_name):
-    global stmts
-    say("%s: Got it. Reading %s with REACH..." % (requester_name, pmcid))
+    say("%s: Got it. Reading %s with REACH." \
+        "This usually takes about a minute." % (requester_name, pmcid))
     rp = reach.process_pmc(pmcid)
-    stmts += rp.statements
-    say("%s: Reading done, updating layout." % requester_name)
-    update_layout()
+    update_model(rp.statements, requester_name)
 
 def update_model_from_text(text, requester_name):
-    global stmts
     say("%s: Got it. Assembling model..." % requester_name)
     tp = trips.process_text(text)
-    stmts += tp.statements
+    update_model(tp.statements, requester_name)
+
+def update_model(new_stmts, requester_name):
+    global stmts
+    stmts += new_stmts
+    pa = Preassembler(hierarchies, stmts)
+    pa.combine_related()
+    stmts = pa.related_stmts
+    print "Stmts before linking:", stmts
+    ml = MechLinker(stmts)
+    linked_stmts = ml.link_statements()
+    print "Linked", linked_stmts
+    if linked_stmts:
+        for linked_stmt in linked_stmts:
+            if linked_stmt.inferred_stmt:
+                question = mechlinker_queries.print_linked_stmt(linked_stmt)
+                print "Question: %s" % question
+                say(question)
+                stmts.append(linked_stmt.inferred_stmt)
     say("%s: Assembly complete, now updating layout." % requester_name)
     update_layout()
 
