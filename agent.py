@@ -41,7 +41,18 @@ def on_message(data):
                     update_model_from_paper(pmcid, data['userName'])
                 else:
                     update_model_from_text(text, data['userName'])
+            if data['comment'] == 'biopax':
+                print 'BIOPAX'
+                call_biopax()
             print '<%s> %s' % (data['userName'], data['comment'])
+
+def call_biopax():
+    global stmts
+    sa = SBGNAssembler()
+    sa.add_statements(stmts)
+    sbgn_content = sa.make_model()
+    print 'BIOPAX CALLED'
+    socket.emit('BioPAXRequest', sbgn_content, 'partialBiopax')
 
 def clear_model(user_name):
     global stmts
@@ -54,10 +65,13 @@ def update_layout():
     sa = SBGNAssembler()
     sa.add_statements(stmts)
     sbgn_content = sa.make_model()
-    socket.emit('agentNewFileRequest', {})
-    time.sleep(2)
-    socket.emit('agentLoadFileRequest', {'param': sbgn_content})
-    socket.emit('agentRunLayoutRequest', {})
+    print sbgn_content
+    params = {'room': room_id, 'userId': user_id,
+              'graph': sbgn_content, 'type': 'sbgn'}
+    socket.emit('agentMergeGraphRequest', params)
+    #socket.emit('agentNewFileRequest', {})
+    #socket.emit('agentLoadFileRequest', {'param': sbgn_content})
+    #socket.emit('agentRunLayoutRequest', {})
 
 def update_model_from_paper(pmcid, requester_name):
     say("%s: Got it. Reading %s via INDRA. " \
