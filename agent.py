@@ -9,6 +9,7 @@ from indra.preassembler import Preassembler
 from indra.preassembler.hierarchy_manager import hierarchies
 from indra.mechlinker import MechLinker
 from indra.tools import mechlinker_queries
+from indra.preassembler import grounding_mapper as gm
 
 USER_ID_LEN = 32
 
@@ -33,8 +34,8 @@ def on_message(data):
         last_seen_msg_id = data['id']
         if {'id': user_id} in data['targets']:
             if data['comment'].startswith('indra:'):
-                text = data['comment'][6:]
-                if text.lower() in ['start over', 'cls']:
+                text = data['comment'][6:].strip()
+                if text.strip().lower() in ['start over', 'cls', 'clear']:
                     clear_model(data['userName'])
                 elif text.strip().lower().startswith('read'):
                     pmcid = text[4:].strip()
@@ -54,30 +55,40 @@ def call_biopax():
     print 'BIOPAX CALLED'
     socket.emit('BioPAXRequest', sbgn_content, 'partialBiopax')
 
-def clear_model(user_name):
+def clear_model(user_name=None):
     global stmts
     stmts = []
-    say('OK %s, starting a new model.' % user_name)
-    update_layout()
+    if user_name:
+        say('OK %s, starting a new model.' % user_name)
+    params = {'room': room_id, 'userId': user_id}
+    socket.emit('agentNewFileRequest', params)
+    socket.emit('agentRunLayoutRequest', params)
 
 def update_layout():
-    global stmts
     sa = SBGNAssembler()
     sa.add_statements(stmts)
     sbgn_content = sa.make_model()
-    print sbgn_content
-    params = {'room': room_id, 'userId': user_id,
-              'graph': sbgn_content, 'type': 'sbgn'}
-    socket.emit('agentMergeGraphRequest', params)
-    #socket.emit('agentNewFileRequest', {})
-    #socket.emit('agentLoadFileRequest', {'param': sbgn_content})
-    #socket.emit('agentRunLayoutRequest', {})
+    #params = {'room': room_id, 'userId': user_id,
+    #          'graph': sbgn_content, 'type': 'sbgn'}
+    #socket.emit('agentMergeGraphRequest', params)
+    params = {'room': room_id, 'userId': user_id}
+    socket.emit('agentNewFileRequest', params)
+    sbgn_params = {'graph': sbgn_content, 'type': 'sbgn'}
+    sbgn_params.update(params)
+    #socket.emit('agentLoadFileRequest', sbgn_params)
+    #socket.emit('agentRunLayoutRequest', sbgn_params)
+    socket.emit('agentMergeGraphRequest', sbgn_params)
 
 def update_model_from_paper(pmcid, requester_name):
     say("%s: Got it. Reading %s via INDRA. " \
         "This usually takes about a minute." % (requester_name, pmcid))
     rp = reach.process_pmc(pmcid)
-    update_model(rp.statements, requester_name)
+    if rp is None:
+        say('Sorry, there was a problem reading that paper.')
+    elif not rp.statements:
+        say("Sorry, I couldn't find any mechanisms in that paper.")
+    else:
+        update_model(rp.statements, requester_name)
 
 def update_model_from_text(text, requester_name):
     say("%s: Got it. Assembling model..." % requester_name)
@@ -87,6 +98,9 @@ def update_model_from_text(text, requester_name):
 def update_model(new_stmts, requester_name):
     global stmts
     stmts += new_stmts
+    # Performing grounding mapping on the statements
+    gmapper = gm.GroundingMapper(gm.default_grounding_map)
+    stmts = gmapper.map_agents(stmts)
     pa = Preassembler(hierarchies, stmts)
     pa.combine_related()
     stmts = pa.related_stmts
