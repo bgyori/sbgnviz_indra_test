@@ -40,6 +40,14 @@ def on_message(data):
                 elif text.strip().lower().startswith('read'):
                     pmcid = text[4:].strip()
                     update_model_from_paper(pmcid, data['userName'])
+                elif text.strip().lower().startswith('remove'):
+                    remove_arg = text[6:].strip()
+                    if len(remove_arg.split(' ')) == 1:
+                        remove_agent(remove_arg, data['userName'])
+                        print "Remove agent:", remove_arg
+                    else:
+                        #remove_mechanism(remove_arg)
+                        print "Remove mechanism:", remove_arg
                 else:
                     update_model_from_text(text, data['userName'])
             if data['comment'] == 'biopax':
@@ -63,6 +71,12 @@ def clear_model(user_name=None):
     params = {'room': room_id, 'userId': user_id}
     socket.emit('agentNewFileRequest', params)
     socket.emit('agentRunLayoutRequest', params)
+
+def remove_agent(agent_name, user_name):
+    global stmts
+    stmts = [stmt for stmt in stmts if agent_name not in
+                            [ag.name for ag in stmt.agent_list()]]
+    update_model(stmts, user_name)
 
 def update_layout():
     sa = SBGNAssembler()
@@ -112,7 +126,7 @@ def update_model(new_stmts, requester_name):
                 question = mechlinker_queries.print_linked_stmt(linked_stmt)
                 say(question)
                 stmts.append(linked_stmt.inferred_stmt)
-    say("%s: Assembly complete, now updating layout." % requester_name)
+    say("%s: Done, updating layout." % requester_name)
     update_layout()
 
 def say(text):
