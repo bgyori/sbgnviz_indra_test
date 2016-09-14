@@ -37,6 +37,14 @@ def on_message(data):
                 text = data['comment'][6:].strip()
                 if text.strip().lower() in ['start over', 'cls', 'clear']:
                     clear_model(data['userName'])
+                # Retrieve cached REACH JSON for demo purposes
+                elif text.strip().lower().startswith('read pmc4338247'):
+                    pmcid = 'PMC4338247'
+                    say("%s: Got it. Reading %s via INDRA. This usually "
+                        "takes about a minute." % (data['userName'], pmcid))
+                    rp = reach.process_json_file('reach_PMC4338247.json')
+                    stmts += rp.statements
+                    assemble_model(data['userName'])
                 elif text.strip().lower().startswith('read'):
                     pmcid = text[4:].strip()
                     update_model_from_paper(pmcid, data['userName'])
@@ -46,7 +54,7 @@ def on_message(data):
                         remove_agent(remove_arg, data['userName'])
                         print "Remove agent:", remove_arg
                     else:
-                        #remove_mechanism(remove_arg)
+                        remove_mechanism(remove_arg, data['userName'])
                         print "Remove mechanism:", remove_arg
                 else:
                     update_model_from_text(text, data['userName'])
@@ -68,15 +76,48 @@ def clear_model(user_name=None):
     stmts = []
     if user_name:
         say('OK %s, starting a new model.' % user_name)
-    params = {'room': room_id, 'userId': user_id}
-    socket.emit('agentNewFileRequest', params)
-    socket.emit('agentRunLayoutRequest', params)
+    update_layout()
+    #params = {'room': room_id, 'userId': user_id}
+    #socket.emit('agentNewFileRequest', params)
+    #socket.emit('agentRunLayoutRequest', params)
 
 def remove_agent(agent_name, user_name):
     global stmts
-    stmts = [stmt for stmt in stmts if agent_name not in
+    filtered_stmts = [stmt for stmt in stmts if agent_name not in
                             [ag.name for ag in stmt.agent_list()]]
-    update_model(stmts, user_name)
+    if filtered_stmts == stmts:
+        say("Sorry, I couldn't find any mechanisms involving %s." % agent_name)
+    else:
+        say("OK, I removed all mechanisms involving %s." % agent_name)
+        stmts = filtered_stmts
+        assemble_model(user_name)
+
+def remove_mechanism(text, user_name):
+    global stmts
+    import ipdb; ipdb.set_trace()
+    tp = trips.process_text(text)
+    gmapper = gm.GroundingMapper(gm.default_grounding_map)
+    tp_stmts = gmapper.map_agents(tp.statements)
+    print "Statements to remove:", tp.statements
+    stmts_to_keep = []
+    for model_stmt in stmts:
+        remove_stmt = False
+        for stmt_to_remove in tp_stmts:
+            if model_stmt.refinement_of(stmt_to_remove, hierarchies):
+                remove_stmt = True
+                break
+        if not remove_stmt:
+            stmts_to_keep.append(model_stmt)
+
+    if stmts_to_keep == stmts:
+        say("Sorry, I couldn't find any matching mechanisms to remove.")
+    else:
+        say("OK, I removed it.")
+        stmts = stmts_to_keep
+        assemble_model(user_name)
+    #remove_keys = [stmt.matches_key() for stmt in tp.statements]
+    #filtered_stmts = [stmt for stmt in stmts
+    #                  if stmt.matches_key() not in remove_keys]
 
 def update_layout():
     sa = SBGNAssembler()
@@ -94,6 +135,7 @@ def update_layout():
     socket.emit('agentMergeGraphRequest', sbgn_params)
 
 def update_model_from_paper(pmcid, requester_name):
+    global stmts
     say("%s: Got it. Reading %s via INDRA. " \
         "This usually takes about a minute." % (requester_name, pmcid))
     rp = reach.process_pmc(pmcid)
@@ -102,16 +144,18 @@ def update_model_from_paper(pmcid, requester_name):
     elif not rp.statements:
         say("Sorry, I couldn't find any mechanisms in that paper.")
     else:
-        update_model(rp.statements, requester_name)
+        stmts += rp.statements
+        assemble_model(requester_name)
 
 def update_model_from_text(text, requester_name):
+    global stmts
     say("%s: Got it. Assembling model..." % requester_name)
     tp = trips.process_text(text)
-    update_model(tp.statements, requester_name)
+    stmts += tp.statements
+    assemble_model(requester_name)
 
-def update_model(new_stmts, requester_name):
+def assemble_model(requester_name):
     global stmts
-    stmts += new_stmts
     # Performing grounding mapping on the statements
     gmapper = gm.GroundingMapper(gm.default_grounding_map)
     stmts = gmapper.map_agents(stmts)
